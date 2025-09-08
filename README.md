@@ -1,0 +1,552 @@
+# Order Lifecycle System
+
+A Temporal-based order lifecycle orchestration system built for the Trellis Engineering take-home assignment. This system demonstrates enterprise-grade workflow orchestration with fault tolerance, observability, and strict performance constraints.
+
+## 🎯 Project Overview
+
+This system implements a complete order lifecycle using Temporal workflows, meeting all requirements from the Trellis Engineering take-home assignment:
+
+- **15-Second Constraint**: All workflows complete within 15 seconds
+- **Fault Tolerance**: Graceful handling of failures and retries
+- **Signal Handling**: Real-time order cancellation and address updates
+- **Database Persistence**: Complete audit trail in PostgreSQL
+- **API & CLI**: Full REST API and command-line interface
+- **Observability**: Comprehensive monitoring and logging
+
+## 🏗️ Architecture
+
+This system implements a complete order lifecycle using Temporal workflows, with the following components:
+
+- **OrderWorkflow**: Main workflow orchestrating the complete order process
+- **ShippingWorkflow**: Child workflow handling shipping operations
+- **Business Logic Functions**: Core business operations with database integration
+- **Temporal Workers**: Process workflows and activities on separate task queues
+- **REST API**: FastAPI endpoints for workflow management
+- **CLI Tools**: Command-line interface for system management
+- **PostgreSQL Database**: Persistent storage for orders, payments, and events
+
+## 🚀 Quick Start
+
+### 1. Start Infrastructure
+
+```bash
+# Start Temporal server, UI, and PostgreSQL database
+./scripts/start_infrastructure.sh
+```
+
+This will start:
+- Temporal server on `http://localhost:7233`
+- Temporal UI on `http://localhost:8080`
+- PostgreSQL database on `localhost:5432`
+
+### 2. Start Workers
+
+```bash
+# Start both Order and Shipping workers
+./scripts/start_workers.sh
+
+# Or start workers individually
+./scripts/start_order_worker.sh
+./scripts/start_shipping_worker.sh
+```
+
+### 3. Start API Server
+
+```bash
+# Start FastAPI server
+./scripts/start_api.sh
+```
+
+API will be available at:
+- API: `http://localhost:8000`
+- Documentation: `http://localhost:8000/docs`
+
+## 📋 Workflow Overview
+
+### OrderWorkflow
+
+The main workflow orchestrates the complete order lifecycle:
+
+1. **Receive Order** - Create new order in database
+2. **Validate Order** - Validate order details and items
+3. **Manual Review** - Simulated human approval (2-second delay)
+4. **Charge Payment** - Process payment with idempotency
+5. **Shipping Workflow** - Child workflow for shipping operations
+
+### ShippingWorkflow
+
+Child workflow handling shipping operations:
+
+1. **Prepare Package** - Prepare order for shipping
+2. **Dispatch Carrier** - Dispatch carrier for delivery
+
+### Signals
+
+- **CancelOrder**: Cancel order before shipping
+- **UpdateAddress**: Update shipping address
+
+### Constraints
+
+- **15-second timeout**: Entire workflow must complete within 15 seconds
+- **Idempotency**: Payment operations are idempotent and safe to retry
+- **Fault tolerance**: Activities can fail and retry without losing state
+
+## 🛠️ API Documentation
+
+### Base URL
+```
+http://localhost:8000
+```
+
+### Interactive Documentation
+Visit `http://localhost:8000/docs` for interactive API documentation with Swagger UI.
+
+### Workflow Management
+
+#### Start Order Workflow
+```http
+POST /orders/{order_id}/start
+Content-Type: application/json
+
+{
+  "initial_address": {
+    "street": "123 Main St",
+    "city": "Anytown",
+    "state": "CA",
+    "zip": "12345"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "workflow_id": "order-{order_id}",
+  "order_id": "{order_id}",
+  "status": "started",
+  "message": "Order workflow started successfully"
+}
+```
+
+#### Get Workflow Status
+```http
+GET /orders/{order_id}/status
+```
+
+**Response:**
+```json
+{
+  "workflow_id": "order-{order_id}",
+  "order_id": "{order_id}",
+  "status": "running|completed|failed|cancelled",
+  "result": {
+    "order_id": "{order_id}",
+    "status": "completed",
+    "completed_steps": ["received", "validated", "reviewed", "payment_charged"],
+    "payment_id": "payment-123"
+  },
+  "error": null,
+  "completed_steps": ["received", "validated", "reviewed"],
+  "created_at": "2025-09-08T05:12:39.402303Z",
+  "updated_at": "2025-09-08T05:12:47.519177Z"
+}
+```
+
+#### Get Workflow History
+```http
+GET /orders/{order_id}/history
+```
+
+#### List All Orders
+```http
+GET /orders
+```
+
+### Signals
+
+#### Cancel Order
+```http
+POST /orders/{order_id}/signals/cancel
+Content-Type: application/json
+
+{
+  "reason": "Customer request",
+  "cancelled_by": "admin"
+}
+```
+
+#### Update Address
+```http
+POST /orders/{order_id}/signals/update-address
+Content-Type: application/json
+
+{
+  "new_address": {
+    "street": "456 Updated St",
+    "city": "Updated City",
+    "state": "NY",
+    "zip": "54321"
+  },
+  "updated_by": "admin"
+}
+```
+
+### System
+
+#### Health Check
+```http
+GET /health
+```
+
+**Response:**
+```json
+{
+  "status": "healthy|unhealthy",
+  "timestamp": "2025-09-08T15:14:29.824431",
+  "temporal_connected": true,
+  "database_connected": true,
+  "workers_healthy": true
+}
+```
+
+## 🖥️ CLI Tools
+
+### Basic Commands
+
+```bash
+# Start an order workflow
+python3 scripts/cli.py start ORDER_ID
+
+# Get order status
+python3 scripts/cli.py status ORDER_ID
+
+# Cancel an order
+python3 scripts/cli.py cancel ORDER_ID --reason "Customer request" --cancelled-by "admin"
+
+# Update order address
+python3 scripts/cli.py update-address ORDER_ID --address '{"street":"123 Main St","city":"Anytown","state":"CA","zip":"12345"}' --updated-by "admin"
+
+# List all orders
+python3 scripts/cli.py list
+
+# Test workflow execution
+python3 scripts/cli.py test ORDER_ID
+```
+
+## 🧪 Testing
+
+### Run All Tests
+
+```bash
+# Test business logic functions
+python3 scripts/test_business_logic.py
+
+# Test workflows
+python3 scripts/test_workflows.py
+
+# Test workers
+python3 scripts/test_workers.py
+
+# Test API endpoints
+python3 scripts/test_api.py
+
+# Comprehensive system test
+python3 scripts/test_system.py
+```
+
+### Test Individual Components
+
+```bash
+# Test database connection
+python3 debug_connection.py
+
+# Test functions without flaky calls
+python3 scripts/test_functions_no_flaky.py
+```
+
+## 📊 Monitoring
+
+### Temporal UI
+
+Access the Temporal UI at `http://localhost:8080` to:
+- View workflow executions
+- Monitor activity performance
+- Debug failed workflows
+- Inspect workflow history
+
+### Database
+
+Connect to PostgreSQL to inspect data:
+
+```bash
+# Connect to database
+docker exec -it postgres psql -U postgres -d trellis_orderdb
+
+# View orders
+SELECT * FROM trellis_orders;
+
+# View payments
+SELECT * FROM trellis_payments;
+
+# View events
+SELECT * FROM trellis_events ORDER BY ts DESC;
+```
+
+## 🏗️ Project Structure
+
+```
+├── src/
+│   ├── api/                 # FastAPI application
+│   ├── workers/             # Temporal workers
+│   ├── workflows/           # Temporal workflows and activities
+│   ├── functions/           # Business logic functions
+│   ├── database/            # Database models and connection
+│   └── config.py            # Configuration management
+├── scripts/                 # Utility scripts
+├── docker-compose.yml       # Infrastructure setup
+├── requirements.txt         # Python dependencies
+└── README.md               # This file
+```
+
+## 🔧 Configuration
+
+Environment variables can be set in `.env` file:
+
+```bash
+# Database
+DB_URL=postgresql://postgres:password@localhost:5432/trellis_orderdb
+
+# Temporal
+TEMPORAL_HOST=localhost
+TEMPORAL_PORT=7233
+TEMPORAL_NAMESPACE=default
+
+# Task Queues
+ORDER_TASK_QUEUE=order-tq
+SHIPPING_TASK_QUEUE=shipping-tq
+
+# Timeouts
+ORDER_WORKFLOW_TIMEOUT_SECONDS=15
+```
+
+## 🚨 Error Handling
+
+The system includes comprehensive error handling:
+
+- **Activity Failures**: Automatic retry with exponential backoff
+- **Workflow Failures**: Graceful error handling and compensation
+- **Database Errors**: Connection pooling and retry logic
+- **Signal Handling**: Proper signal validation and error reporting
+
+## 📈 Performance
+
+- **Concurrent Processing**: Workers can process multiple workflows simultaneously
+- **Task Queue Isolation**: Order and Shipping workflows run on separate queues
+- **Database Optimization**: Connection pooling and proper indexing
+- **15-Second Constraint**: Workflows are designed to complete within the time limit
+
+## 🔒 Security
+
+- **Input Validation**: All API inputs are validated using Pydantic
+- **Error Sanitization**: Sensitive information is not exposed in error messages
+- **Database Security**: Parameterized queries prevent SQL injection
+
+## 📝 Logging
+
+Structured logging is implemented throughout the system:
+
+- **Workflow Logs**: Track workflow execution and state changes
+- **Activity Logs**: Monitor activity performance and failures
+- **API Logs**: Track API requests and responses
+- **Database Logs**: Monitor database operations
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+#### 1. Infrastructure Not Starting
+**Problem**: Docker containers fail to start
+```bash
+# Check Docker status
+docker ps
+
+# Restart infrastructure
+./scripts/start_infrastructure.sh
+
+# Check logs
+docker-compose logs
+```
+
+#### 2. Workers Not Processing Workflows
+**Problem**: Workflows start but don't complete
+```bash
+# Check if workers are running
+ps aux | grep python
+
+# Restart workers
+./scripts/start_workers.sh
+
+# Check worker logs
+python3 -m src.workers.combined_worker
+```
+
+#### 3. API Connection Issues
+**Problem**: API returns 503 Service Unavailable
+```bash
+# Check if API server is running
+curl http://localhost:8000/health
+
+# Restart API server
+python3 -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+```
+
+#### 4. Database Connection Issues
+**Problem**: Database connection errors
+```bash
+# Check PostgreSQL status
+docker exec -it postgres psql -U postgres -d trellis_orderdb -c "SELECT 1;"
+
+# Check database logs
+docker logs postgres
+```
+
+#### 5. Workflow Timeout Issues
+**Problem**: Workflows exceed 15-second constraint
+```bash
+# Check workflow performance
+python3 test_15_second_constraint.py
+
+# Monitor workflow execution
+# Visit http://localhost:8080 (Temporal UI)
+```
+
+### Performance Issues
+
+#### Workflow Taking Too Long
+1. Check activity timeouts in workflow definitions
+2. Verify database connection pooling
+3. Monitor system resources (CPU, memory)
+4. Check for network latency issues
+
+#### High Memory Usage
+1. Monitor worker processes
+2. Check for memory leaks in activities
+3. Restart workers periodically
+4. Optimize database queries
+
+### Debugging Workflows
+
+#### Using Temporal UI
+1. Visit `http://localhost:8080`
+2. Navigate to "Workflows"
+3. Search for your workflow ID
+4. View execution history and events
+
+#### Using CLI
+```bash
+# Get workflow status
+python3 scripts/cli.py status ORDER_ID
+
+# Get workflow history
+python3 scripts/cli.py history ORDER_ID
+
+# List all workflows
+python3 scripts/cli.py list
+```
+
+#### Using API
+```bash
+# Get workflow status
+curl http://localhost:8000/orders/ORDER_ID/status
+
+# Get workflow history
+curl http://localhost:8000/orders/ORDER_ID/history
+```
+
+### Log Analysis
+
+#### Application Logs
+```bash
+# Check API logs
+tail -f logs/api.log
+
+# Check worker logs
+tail -f logs/worker.log
+
+# Check database logs
+docker logs postgres
+```
+
+#### Temporal Logs
+```bash
+# Check Temporal server logs
+docker logs temporal
+
+# Check Temporal UI logs
+docker logs temporal-ui
+```
+
+### Testing and Validation
+
+#### Run All Tests
+```bash
+# Run comprehensive test suite
+python3 run_tests.py
+
+# Run specific test categories
+python3 run_tests.py unit
+python3 run_tests.py performance
+python3 run_tests.py api
+```
+
+#### Validate 15-Second Constraint
+```bash
+# Run constraint validation
+python3 test_15_second_constraint.py
+
+# Run simple validation
+python3 test_simple_validation.py
+```
+
+### Environment Issues
+
+#### Python Dependencies
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Check Python version
+python3 --version  # Should be 3.8+
+
+# Check installed packages
+pip list
+```
+
+#### Docker Issues
+```bash
+# Check Docker version
+docker --version
+
+# Check Docker Compose version
+docker-compose --version
+
+# Restart Docker service (if needed)
+sudo systemctl restart docker
+```
+
+## 📊 Performance Monitoring
+
+### Key Metrics
+- **Workflow Completion Time**: Should be ≤ 15 seconds
+- **API Response Time**: Should be ≤ 1 second
+- **Database Query Time**: Should be ≤ 100ms
+- **Worker CPU Usage**: Should be ≤ 80%
+- **Memory Usage**: Should be ≤ 2GB per worker
+
+### Monitoring Tools
+- **Temporal UI**: `http://localhost:8080`
+- **API Health**: `http://localhost:8000/health`
+- **Database**: Connect to `localhost:5432`
+- **System Resources**: Use `htop` or `top`
+
+

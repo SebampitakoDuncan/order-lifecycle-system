@@ -18,14 +18,20 @@ pip install -r requirements.txt
 
 ### 2. Start Infrastructure
 ```bash
-# Start Temporal server, UI, and PostgreSQL
+# Start Temporal server, UI, and PostgreSQL (handles conflicts automatically)
 ./scripts/start_infrastructure.sh
 
-# Wait 30 seconds for services to start, then start workers
+# Wait for services to fully initialize (60 seconds), then start workers
 ./scripts/start_workers.sh
 
 # Start API server (in new terminal)
 python3 -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+```
+
+**Or use the automated setup:**
+```bash
+# One-command setup (recommended for first-time users)
+./setup.sh
 ```
 
 ### 3. Verify Setup
@@ -134,8 +140,16 @@ curl http://localhost:8000/orders
 # Check Docker status
 docker ps
 
-# Restart everything
+# Clean restart (handles container name conflicts)
 docker-compose down -v
+./scripts/start_infrastructure.sh
+```
+
+### Container Name Conflicts?
+```bash
+# If you get "container name already in use" errors:
+docker-compose down -v
+docker system prune -f
 ./scripts/start_infrastructure.sh
 ```
 

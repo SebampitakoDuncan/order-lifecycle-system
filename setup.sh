@@ -42,19 +42,29 @@ echo "🐳 Starting infrastructure (Temporal, PostgreSQL)..."
 ./scripts/start_infrastructure.sh
 
 # Wait for services to be ready
-echo "⏳ Waiting for services to start (30 seconds)..."
-sleep 30
+echo "⏳ Waiting for services to start (60 seconds for full initialization)..."
+sleep 60
 
 # Check if services are running
 echo "🔍 Checking service status..."
-if ! docker ps | grep -q "temporal"; then
-    echo "❌ Temporal server failed to start"
+if ! docker-compose ps | grep -q "Up"; then
+    echo "❌ Some services failed to start. Checking logs..."
+    docker-compose logs --tail=20
+    echo ""
+    echo "💡 Try running: docker-compose down && ./scripts/start_infrastructure.sh"
     exit 1
 fi
 
-if ! docker ps | grep -q "postgres"; then
-    echo "❌ PostgreSQL failed to start"
-    exit 1
+# Test service connectivity
+echo "🔍 Testing service connectivity..."
+if ! curl -s http://localhost:7233 > /dev/null 2>&1; then
+    echo "⚠️  Temporal server is not responding yet. Waiting a bit more..."
+    sleep 30
+fi
+
+if ! curl -s http://localhost:8080 > /dev/null 2>&1; then
+    echo "⚠️  Temporal UI is not responding yet. Waiting a bit more..."
+    sleep 30
 fi
 
 echo "✅ Infrastructure is running"

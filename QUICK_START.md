@@ -71,6 +71,18 @@ python3 test_15_second_constraint.py
 # Should show: "🎉 ALL TESTS PASSED! 15-second constraint is satisfied."
 ```
 
+## 🧪 Run All Tests
+
+```bash
+# Run comprehensive test suite
+python3 run_tests.py
+
+# Or run individual test categories:
+python3 test_simple_validation.py    # Quick system validation
+python3 scripts/test_api.py          # API endpoint tests
+python3 scripts/test_workflows.py    # Workflow execution tests
+```
+
 ## 📋 Copy-Paste Examples
 
 ### 1. Start Order Workflow

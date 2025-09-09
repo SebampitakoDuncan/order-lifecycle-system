@@ -13,6 +13,34 @@ This system implements a complete order lifecycle using Temporal workflows, meet
 - **API & CLI**: Full REST API and command-line interface
 - **Observability**: Comprehensive monitoring and logging
 
+## 🚀 Getting Started
+
+### Prerequisites
+- Docker & Docker Compose
+- Python 3.8+
+- Git
+
+### Setup Instructions
+
+```bash
+# Clone the repository
+git clone https://github.com/SebampitakoDuncan/order-lifecycle-system.git
+cd order-lifecycle-system
+
+# Install Python dependencies
+pip install -r requirements.txt
+```
+
+### 🧪 For Testing and Quick Demo
+
+**If you want to test the system quickly, please read the [QUICK_START.md](QUICK_START.md) guide first!**
+
+The quick start guide provides:
+- 5-minute setup instructions
+- Copy-paste API examples
+- Troubleshooting for common issues
+- Expected results and performance metrics
+
 ## 🏗️ Architecture
 
 This system implements a complete order lifecycle using Temporal workflows, with the following components:
@@ -25,7 +53,7 @@ This system implements a complete order lifecycle using Temporal workflows, with
 - **CLI Tools**: Command-line interface for system management
 - **PostgreSQL Database**: Persistent storage for orders, payments, and events
 
-## 🚀 Quick Start
+## 🚀 Manual Setup (Alternative to Quick Start)
 
 ### 1. Start Infrastructure
 

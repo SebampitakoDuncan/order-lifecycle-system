@@ -11,8 +11,8 @@ A Temporal-based order workflow system that completes within 15 seconds. Ready t
 
 ### 1. Clone and Setup
 ```bash
-git clone <your-repo-url>
-cd temp14
+git clone https://github.com/SebampitakoDuncan/order-lifecycle-system.git
+cd order-lifecycle-system
 pip install -r requirements.txt
 ```
 

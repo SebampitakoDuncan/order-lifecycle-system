@@ -13,7 +13,7 @@ class Config:
     """Application configuration."""
     
     # Database configuration
-    DB_URL: str = os.getenv('DB_URL', 'postgresql://postgres:password@localhost:5432/orderdb')
+    DB_URL: str = os.getenv('DB_URL', 'postgresql://postgres:password@localhost:5432/trellis_orderdb')
     
     # Temporal configuration
     TEMPORAL_HOST: str = os.getenv('TEMPORAL_HOST', 'localhost')
@@ -35,6 +35,7 @@ class Config:
     
     # Logging configuration
     LOG_LEVEL: str = os.getenv('LOG_LEVEL', 'INFO')
+    LOG_FORMAT_JSON: bool = os.getenv('LOG_FORMAT_JSON', 'true').lower() == 'true'
     
     @property
     def temporal_url(self) -> str:
@@ -43,3 +44,5 @@ class Config:
 
 # Global configuration instance
 config = Config()
+
+# Note: structlog configuration is performed by application entrypoints (API/workers)

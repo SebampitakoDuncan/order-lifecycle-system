@@ -58,7 +58,7 @@ class OrderCLI:
                 initial_address,
                 id=f"order-{order_id}",
                 task_queue=config.ORDER_TASK_QUEUE,
-                execution_timeout=timedelta(seconds=30),
+                execution_timeout=timedelta(seconds=config.WORKFLOW_TIMEOUT_SECONDS),
             )
             
             print(f"✅ Started order workflow: {handle.id}")

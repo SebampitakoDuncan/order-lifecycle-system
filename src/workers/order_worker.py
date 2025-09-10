@@ -14,19 +14,17 @@ from temporalio.worker import Worker
 
 from ..workflows import (
     OrderWorkflow,
+)
+from ..workflows.activities import (
     receive_order_activity,
     validate_order_activity,
     charge_payment_activity,
-    manual_review_activity
 )
 from ..config import config
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger(__name__)
 
 
 class OrderWorker:

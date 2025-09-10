@@ -3,7 +3,6 @@ ShippingWorkflow - Child workflow for handling order shipping.
 Runs on separate task queue and signals back to parent on failure.
 """
 
-import logging
 from typing import Dict, Any
 from datetime import timedelta
 
@@ -11,13 +10,11 @@ from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError
 
-from .activities import (
-    prepare_package_activity,
-    dispatch_carrier_activity
-)
+# Do not import activities here; use activity names to avoid sandbox importing activity modules
 from .signals import DispatchFailedSignal
+# Avoid importing config in workflow code (sandbox-safe). Use constants.
+ACTIVITY_TIMEOUT_SECONDS = 3
 
-logger = logging.getLogger(__name__)
 
 
 @workflow.defn
@@ -50,38 +47,38 @@ class ShippingWorkflow:
             Dict with shipping status and results
         """
         order_id = order.get("order_id")
-        logger.info(f"Starting ShippingWorkflow for order: {order_id}")
+        workflow.logger.info(f"Starting ShippingWorkflow for order: {order_id}")
         
         try:
             # Step 1: Prepare Package
-            logger.info(f"Preparing package for order: {order_id}")
+            workflow.logger.info(f"Preparing package for order: {order_id}")
             package_result = await workflow.execute_activity(
-                prepare_package_activity,
+                "prepare_package_activity",
                 args=[order],
-                start_to_close_timeout=timedelta(seconds=10),
+                start_to_close_timeout=timedelta(seconds=ACTIVITY_TIMEOUT_SECONDS),
                 retry_policy=RetryPolicy(
                     initial_interval=timedelta(seconds=1),
-                    maximum_interval=timedelta(seconds=10),
-                    maximum_attempts=3,
+                    maximum_interval=timedelta(seconds=5),
+                    maximum_attempts=2,
                     backoff_coefficient=2.0,
                 )
             )
-            logger.info(f"Package prepared for order {order_id}: {package_result}")
+            workflow.logger.info(f"Package prepared for order {order_id}: {package_result}")
             
             # Step 2: Dispatch Carrier
-            logger.info(f"Dispatching carrier for order: {order_id}")
+            workflow.logger.info(f"Dispatching carrier for order: {order_id}")
             dispatch_result = await workflow.execute_activity(
-                dispatch_carrier_activity,
+                "dispatch_carrier_activity",
                 args=[order],
-                start_to_close_timeout=timedelta(seconds=10),
+                start_to_close_timeout=timedelta(seconds=ACTIVITY_TIMEOUT_SECONDS),
                 retry_policy=RetryPolicy(
                     initial_interval=timedelta(seconds=1),
-                    maximum_interval=timedelta(seconds=10),
-                    maximum_attempts=3,
+                    maximum_interval=timedelta(seconds=5),
+                    maximum_attempts=2,
                     backoff_coefficient=2.0,
                 )
             )
-            logger.info(f"Carrier dispatched for order {order_id}: {dispatch_result}")
+            workflow.logger.info(f"Carrier dispatched for order {order_id}: {dispatch_result}")
             
             # Success - return results
             result = {
@@ -92,37 +89,46 @@ class ShippingWorkflow:
                 "shipping_completed": True
             }
             
-            logger.info(f"ShippingWorkflow completed successfully for order: {order_id}")
+            workflow.logger.info(f"ShippingWorkflow completed successfully for order: {order_id}")
             return result
             
         except ActivityError as e:
-            # Activity failed - signal parent workflow
+            # Activity failed - signal parent workflow and propagate error
             error_msg = f"Shipping activity failed for order {order_id}: {str(e)}"
-            logger.error(error_msg)
-            
+            workflow.logger.error(error_msg)
+
             self.dispatch_failed = True
             self.failure_reason = error_msg
             self.retry_count += 1
-            
-            # Signal parent workflow about the failure
-            # Note: In a real implementation, we'd need the parent workflow handle
-            # For now, we'll raise an exception that the parent can catch
-            raise workflow.ChildWorkflowError(
-                f"Shipping failed for order {order_id}: {error_msg}"
-            )
+
+            # Send signal back to parent workflow
+            try:
+                parent_info = workflow.info().parent
+                if parent_info and parent_info.workflow_id:
+                    parent_handle = workflow.get_external_workflow_handle(parent_info.workflow_id)
+                    await parent_handle.signal(
+                        "handle_dispatch_failed",
+                        DispatchFailedSignal(reason=error_msg, order_id=order_id, retry_count=self.retry_count)
+                    )
+            except Exception:
+                # If signaling fails, still propagate error
+                pass
+
+            # Propagate to parent (will surface as ChildWorkflowError)
+            raise
             
         except Exception as e:
             # Unexpected error
             error_msg = f"Unexpected error in ShippingWorkflow for order {order_id}: {str(e)}"
-            logger.error(error_msg)
+            workflow.logger.error(error_msg)
             raise
     
     @workflow.signal
-    async def handle_dispatch_failed(self, signal: DispatchFailedSignal):
+    def handle_dispatch_failed(self, signal: DispatchFailedSignal):
         """
         Handle dispatch failure signal (if needed for retry logic).
         """
-        logger.info(f"Received dispatch failed signal for order {signal.order_id}: {signal.reason}")
+        workflow.logger.info(f"Received dispatch failed signal for order {signal.order_id}: {signal.reason}")
         self.dispatch_failed = True
         self.failure_reason = signal.reason
         self.retry_count = signal.retry_count

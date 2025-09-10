@@ -15,21 +15,20 @@ from temporalio.worker import Worker
 from ..workflows import (
     OrderWorkflow,
     ShippingWorkflow,
+)
+from ..workflows.activities import (
     receive_order_activity,
     validate_order_activity,
     charge_payment_activity,
     manual_review_activity,
     prepare_package_activity,
-    dispatch_carrier_activity
+    dispatch_carrier_activity,
 )
 from ..config import config
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger(__name__)
 
 
 class CombinedWorker:
@@ -62,7 +61,7 @@ class CombinedWorker:
                     receive_order_activity,
                     validate_order_activity,
                     charge_payment_activity,
-                    manual_review_activity
+                    manual_review_activity,
                 ],
                 max_concurrent_activities=10,
                 max_concurrent_workflow_tasks=10,
@@ -86,7 +85,10 @@ class CombinedWorker:
             logger.info(f"  - Shipping worker on task queue: {config.SHIPPING_TASK_QUEUE}")
             
         except Exception as e:
+            import traceback
             logger.error(f"Failed to initialize combined worker: {e}")
+            tb = traceback.format_exc()
+            logger.error(f"init_traceback: {tb}")
             raise
     
     async def start(self):
@@ -150,7 +152,7 @@ class CombinedWorker:
                             "receive_order_activity",
                             "validate_order_activity",
                             "charge_payment_activity",
-                            "manual_review_activity"
+                            "manual_review_activity",
                         ]
                     },
                     "shipping": {

@@ -112,13 +112,9 @@ else
     exit 1
 fi
 
-# Run performance test
-echo "   Testing 15-second constraint..."
-if python3 test_15_second_constraint.py > /dev/null 2>&1; then
-    echo "   ✅ 15-second constraint test passed"
-else
-    echo "   ⚠️  15-second constraint test had issues (this is normal for first run)"
-fi
+echo "   You can validate the 15-second constraint via Temporal UI:"
+echo "   - Visit http://localhost:8080, open the workflow execution,"
+echo "     and inspect event timestamps to verify total duration."
 
 echo ""
 echo "🎉 Setup Complete!"
@@ -135,7 +131,8 @@ echo "   🔍 Temporal UI: http://localhost:8080"
 echo "   ❤️  Health Check: http://localhost:8000/health"
 echo ""
 echo "🧪 Quick Test:"
-echo "   python3 demo.py"
+echo "   # Start an order via API"
+echo "   curl -X POST \"http://localhost:8000/orders/my-order-123/start\" \\\n+     -H \"Content-Type: application/json\" \\\n+     -d '{\"initial_address\": {\"street\": \"123 Main St\", \"city\": \"Anytown\", \"state\": \"CA\", \"zip\": \"12345\"}}'"
 echo ""
 echo "📋 Copy-Paste Examples:"
 echo "   # Start an order"

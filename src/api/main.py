@@ -20,8 +20,8 @@ from ..workflows.signals import CancelOrderSignal, UpdateAddressSignal
 from ..config import config
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger(__name__)
 
 # Create FastAPI app
 app = FastAPI(
@@ -92,9 +92,9 @@ async def startup_event():
             f"{config.TEMPORAL_HOST}:{config.TEMPORAL_PORT}",
             namespace=config.TEMPORAL_NAMESPACE
         )
-        logger.info(f"Connected to Temporal server at {config.TEMPORAL_HOST}:{config.TEMPORAL_PORT}")
+        logger.info("temporal_connected", host=config.TEMPORAL_HOST, port=config.TEMPORAL_PORT)
     except Exception as e:
-        logger.error(f"Failed to connect to Temporal server: {e}")
+        logger.error("temporal_connect_failed", error=str(e))
         raise
 
 
@@ -102,9 +102,9 @@ async def startup_event():
 async def shutdown_event():
     """Clean up resources on shutdown."""
     global temporal_client
-    if temporal_client:
-        await temporal_client.close()
-        logger.info("Disconnected from Temporal server")
+    # Client does not require explicit close in current SDK
+    temporal_client = None
+    logger.info("temporal_disconnected")
 
 
 # API Endpoints
@@ -113,14 +113,15 @@ async def shutdown_event():
 async def health_check():
     """Health check endpoint."""
     try:
-        # Check Temporal connection
+        # Check Temporal connection using a lightweight RPC
         temporal_connected = False
         if temporal_client:
             try:
-                await temporal_client.list_workflows()
+                from temporalio.api.workflowservice.v1 import GetSystemInfoRequest
+                await temporal_client.workflow_service.get_system_info(GetSystemInfoRequest())
                 temporal_connected = True
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error("temporal_health_check_failed", error=str(e))
         
         # Check database connection
         database_connected = False
@@ -167,10 +168,10 @@ async def start_order_workflow(order_id: str, request: StartOrderRequest):
             args=[order_id, request.initial_address],
             id=f"order-{order_id}",
             task_queue=config.ORDER_TASK_QUEUE,
-            execution_timeout=timedelta(seconds=30),
+            execution_timeout=timedelta(seconds=config.WORKFLOW_TIMEOUT_SECONDS),
         )
         
-        logger.info(f"Started order workflow: {handle.id}")
+        logger.info("workflow_started", workflow_id=handle.id, order_id=order_id)
         
         return {
             "workflow_id": handle.id,
@@ -180,7 +181,7 @@ async def start_order_workflow(order_id: str, request: StartOrderRequest):
         }
         
     except Exception as e:
-        logger.error(f"Failed to start order workflow for {order_id}: {e}")
+        logger.error("workflow_start_failed", order_id=order_id, error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to start workflow: {str(e)}")
 
 
@@ -204,7 +205,7 @@ async def cancel_order(order_id: str, request: CancelOrderRequest):
             )
         )
         
-        logger.info(f"Sent cancel signal to order workflow: {workflow_id}")
+        logger.info("signal_cancel_sent", workflow_id=workflow_id, order_id=order_id)
         
         return {
             "workflow_id": workflow_id,
@@ -216,7 +217,7 @@ async def cancel_order(order_id: str, request: CancelOrderRequest):
     except Exception as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=f"Order workflow not found: {order_id}")
-        logger.error(f"Failed to cancel order workflow for {order_id}: {e}")
+        logger.error("signal_cancel_failed", order_id=order_id, error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to cancel workflow: {str(e)}")
 
 
@@ -240,7 +241,7 @@ async def update_order_address(order_id: str, request: UpdateAddressRequest):
             )
         )
         
-        logger.info(f"Sent address update signal to order workflow: {workflow_id}")
+        logger.info("signal_update_address_sent", workflow_id=workflow_id, order_id=order_id)
         
         return {
             "workflow_id": workflow_id,
@@ -252,7 +253,7 @@ async def update_order_address(order_id: str, request: UpdateAddressRequest):
     except Exception as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=f"Order workflow not found: {order_id}")
-        logger.error(f"Failed to update address for order workflow {order_id}: {e}")
+        logger.error("signal_update_address_failed", order_id=order_id, error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to update address: {str(e)}")
 
 
@@ -304,7 +305,7 @@ async def get_order_status(order_id: str):
     except Exception as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=f"Order workflow not found: {order_id}")
-        logger.error(f"Failed to get status for order workflow {order_id}: {e}")
+        logger.error("get_status_failed", order_id=order_id, error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to get workflow status: {str(e)}")
 
 
@@ -319,47 +320,28 @@ async def get_order_history(order_id: str):
         workflow_id = f"order-{order_id}"
         handle = temporal_client.get_workflow_handle(workflow_id)
         
-        # Get workflow history
-        history = await handle.fetch_history_events()
-        
-        # Format history events
+        # Get workflow history (async iterator) and serialize minimally
         events = []
-        for event in history:
-            event_data = {
-                "event_id": event.event_id,
-                "event_type": event.event_type.name,
-                "timestamp": event.event_time,
-                "data": {}
-            }
-            
-            # Add event-specific data
-            if hasattr(event, 'workflow_execution_started_event_attributes'):
-                attrs = event.workflow_execution_started_event_attributes
-                event_data["data"] = {
-                    "workflow_type": attrs.workflow_type.name if attrs.workflow_type else None,
-                    "task_queue": attrs.task_queue.name if attrs.task_queue else None,
-                    "input": str(attrs.input.payloads[0]) if attrs.input and attrs.input.payloads else None
-                }
-            elif hasattr(event, 'activity_task_scheduled_event_attributes'):
-                attrs = event.activity_task_scheduled_event_attributes
-                event_data["data"] = {
-                    "activity_type": attrs.activity_type.name if attrs.activity_type else None,
-                    "activity_id": attrs.activity_id
-                }
-            elif hasattr(event, 'activity_task_completed_event_attributes'):
-                attrs = event.activity_task_completed_event_attributes
-                event_data["data"] = {
-                    "activity_id": attrs.activity_id,
-                    "result": str(attrs.result.payloads[0]) if attrs.result and attrs.result.payloads else None
-                }
-            elif hasattr(event, 'activity_task_failed_event_attributes'):
-                attrs = event.activity_task_failed_event_attributes
-                event_data["data"] = {
-                    "activity_id": attrs.activity_id,
-                    "failure": str(attrs.failure) if attrs.failure else None
-                }
-            
-            events.append(event_data)
+        async for event in handle.fetch_history_events():
+            try:
+                etype = event.event_type.name  # enum style
+            except Exception:
+                try:
+                    etype = str(event.event_type)
+                except Exception:
+                    etype = "unknown"
+
+            try:
+                ts = getattr(event, "event_time", None)
+                ts_str = str(ts) if ts is not None else None
+            except Exception:
+                ts_str = None
+
+            events.append({
+                "event_id": getattr(event, "event_id", None),
+                "event_type": etype,
+                "timestamp": ts_str,
+            })
         
         return {
             "workflow_id": workflow_id,
@@ -371,7 +353,7 @@ async def get_order_history(order_id: str):
     except Exception as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=f"Order workflow not found: {order_id}")
-        logger.error(f"Failed to get history for order workflow {order_id}: {e}")
+        logger.error("get_history_failed", order_id=order_id, error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to get workflow history: {str(e)}")
 
 

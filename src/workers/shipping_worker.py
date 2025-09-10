@@ -14,17 +14,16 @@ from temporalio.worker import Worker
 
 from ..workflows import (
     ShippingWorkflow,
+)
+from ..workflows.activities import (
     prepare_package_activity,
     dispatch_carrier_activity
 )
 from ..config import config
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger(__name__)
 
 
 class ShippingWorker:

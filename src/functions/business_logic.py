@@ -12,7 +12,8 @@ import json
 from ..database.connection import get_db
 # from database.models import Order, Payment, Event  # Not used with direct asyncpg
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger(__name__)
 
 # Error/Timeout Simulation Helper (You cannot change this function, which must be called from all the Function Stubs)
 async def flaky_call() -> None:
@@ -105,7 +106,7 @@ async def order_validated(order: Dict[str, Any]) -> bool:
     await db_manager.execute("""
         UPDATE trellis_orders 
         SET state = $1, updated_at = $2
-        WHERE id = $3
+        WHERE id = $3 AND state IN ('received','validated')
     """, "validated", datetime.now(timezone.utc), order_id)
     
     # Log validation event
@@ -140,27 +141,32 @@ async def payment_charged(order: Dict[str, Any], payment_id: str) -> Dict[str, A
     
     db_manager = await get_db()
     
-    # Check if payment already exists (idempotency)
-    existing_payment = await db_manager.fetchrow("""
-        SELECT payment_id, status, amount FROM trellis_payments 
-        WHERE payment_id = $1
-    """, payment_id)
-    
-    if existing_payment:
-        logger.info(f"Payment {payment_id} already exists with status {existing_payment['status']}")
-        return {
-            "status": existing_payment["status"],
-            "amount": float(existing_payment["amount"]),
-            "payment_id": payment_id
-        }
-    
-    # Insert new payment record with idempotency
+    # Insert or fetch existing payment (race-safe idempotency via upsert)
     try:
         await db_manager.execute("""
             INSERT INTO trellis_payments (payment_id, order_id, status, amount, created_at)
             VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (payment_id) DO NOTHING
         """, payment_id, order_id, "charged", amount, datetime.now(timezone.utc))
-        
+
+        # Fetch the current payment record (inserted now or existing prior)
+        existing_payment = await db_manager.fetchrow("""
+            SELECT payment_id, status, amount FROM trellis_payments 
+            WHERE payment_id = $1
+        """, payment_id)
+
+        if existing_payment and existing_payment["status"] != "charged":
+            # If conflicting status, update to charged (idempotent final state)
+            await db_manager.execute("""
+                UPDATE trellis_payments
+                SET status = $1
+                WHERE payment_id = $2
+            """, "charged", payment_id)
+            existing_payment = await db_manager.fetchrow("""
+                SELECT payment_id, status, amount FROM trellis_payments 
+                WHERE payment_id = $1
+            """, payment_id)
+
         # Update order state
         await db_manager.execute("""
             UPDATE trellis_orders 
@@ -180,7 +186,7 @@ async def payment_charged(order: Dict[str, Any], payment_id: str) -> Dict[str, A
         
         logger.info(f"Payment {payment_id} successfully charged for order {order_id}")
         
-        return {"status": "charged", "amount": amount, "payment_id": payment_id}
+        return {"status": existing_payment["status"] if existing_payment else "charged", "amount": amount, "payment_id": payment_id}
         
     except Exception as e:
         logger.error(f"Failed to charge payment {payment_id}: {e}")
@@ -209,7 +215,7 @@ async def order_shipped(order: Dict[str, Any]) -> str:
     await db_manager.execute("""
         UPDATE trellis_orders 
         SET state = $1, updated_at = $2
-        WHERE id = $3
+        WHERE id = $3 AND state NOT IN ('shipped','cancelled')
     """, "shipped", datetime.now(timezone.utc), order_id)
     
     # Log shipping event
@@ -245,7 +251,7 @@ async def package_prepared(order: Dict[str, Any]) -> str:
     await db_manager.execute("""
         UPDATE trellis_orders 
         SET state = $1, updated_at = $2
-        WHERE id = $3
+        WHERE id = $3 AND state NOT IN ('shipped','cancelled')
     """, "package_prepared", datetime.now(timezone.utc), order_id)
     
     # Log package preparation event
@@ -281,7 +287,7 @@ async def carrier_dispatched(order: Dict[str, Any]) -> str:
     await db_manager.execute("""
         UPDATE trellis_orders 
         SET state = $1, updated_at = $2
-        WHERE id = $3
+        WHERE id = $3 AND state NOT IN ('shipped','cancelled')
     """, "carrier_dispatched", datetime.now(timezone.utc), order_id)
     
     # Log carrier dispatch event

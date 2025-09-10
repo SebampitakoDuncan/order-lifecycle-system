@@ -1,6 +1,6 @@
 # Order Lifecycle System
 
-Temporal-based orchestration of an order lifecycle with a hard 15-second completion target, a PostgreSQL audit trail, a FastAPI REST API, and CLI utilities.
+Temporal-based orchestration of an order lifecycle with a hard 15-second completion target, a PostgreSQL audit trail, and a FastAPI REST API.
 
 ## Overview
 - Parent workflow: receive → validate → manual review → charge → ship (child workflow).
@@ -78,23 +78,7 @@ curl "http://localhost:8000/orders/{order_id}/history"
 curl "http://localhost:8000/orders"
 ```
 
-## CLI (optional)
-```bash
-# Start an order
-python3 scripts/cli.py start ORDER_ID
 
-# Get status
-python3 scripts/cli.py status ORDER_ID
-
-# Cancel
-python3 scripts/cli.py cancel ORDER_ID --reason "Customer request" --cancelled-by admin
-
-# Update address
-python3 scripts/cli.py update-address ORDER_ID --address '{"street":"123 Main","city":"Any","state":"CA","zip":"12345"}' --updated-by admin
-
-# List all
-python3 scripts/cli.py list
-```
 
 ## Configuration
 Set via environment variables (see `env.example`):
@@ -132,8 +116,7 @@ python3 -m pytest tests/test_api.py -v
 │   ├── workflows/      # Temporal workflows + activities
 │   ├── functions/      # Business logic + DB writes
 │   └── database/       # DB pool + migrations
-├── scripts/            # Infra, API, and worker scripts; CLI
+├── scripts/            # Infra, API, and worker scripts
 ├── tests/              # Pytest suites
 └── docker-compose.yml  # Temporal + UI + Postgres
 ```
-
